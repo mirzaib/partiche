@@ -1,0 +1,52 @@
+import tensorflow as tf
+
+# Define the input layers for the content and style images
+content_image = tf.keras.layers.Input(shape=(256, 256, 3))
+style_image = tf.keras.layers.Input(shape=(256, 256, 3))
+
+# Create a variable to control the amount of style transfer
+alpha = tf.Variable(0.5, dtype=tf.float32)
+
+# Define the VGG19 model for extracting features from the images
+vgg19 = tf.keras.applications.VGG19(include_top=False, weights='imagenet')
+
+# Extract features from the content and style images
+content_features = vgg19(content_image)
+style_features = vgg19(style_image)
+
+# Define the loss function for the content and style
+content_loss = tf.reduce_mean(tf.square(content_features - style_features))
+style_loss = tf.reduce_mean(tf.square(style_features - content_features))
+
+# Define the total loss as a weighted sum of the content and style losses
+total_loss = alpha * content_loss + (1 - alpha) * style_loss
+
+# Create the model to generate the new image
+model = tf.keras.models.Model(inputs=[content_image, style_image], outputs=[total_loss])
+async def main():
+    # Create tasks to download the content and style images
+    content_task = asyncio.create_task(tf.keras.utils.get_file('content.jpg', 'https://images.unsplash.com/photo-1492037766660-2a56f9eb3fcb?crop=entropy&cs=tinysrgb&fit=crop&fm=jpg&h=256&ixid=MnwxfDB8MXxyYW5kb218MHx8YXJ0fHx8fHx8MTY3NDk5NjQ1Ng&ixlib=rb-4.0.3&q=80&utm_campaign=api-credit&utm_medium=referral&utm_source=unsplash_source&w=256'))
+    style_task = asyncio.create_task(tf.keras.utils.get_file('style.jpg', 'https://source.unsplash.com/random/256x256/?art&'))
+
+    # Wait for the tasks to complete
+    content_path, style_path = await asyncio.gather(content_task, style_task)
+
+    # Read the images
+    content_image = await tf.io.read_file(content_path)
+    content_image = await tf.image.decode_jpeg(content_image, channels=3)
+    content_image = await tf.image.convert_image_dtype(content_image, tf.float32)
+    style_image = await tf.io.read_file(style_path)
+    style_image = await tf.image.decode_jpeg(style_image, channels=3)
+    style_image = await tf.image.convert_image_dtype(style_image, tf.float32)
+
+    # Train the model and generate the new image
+    model.fit([content_image, style_image], epochs=10, steps_per_epoch=100)
+    new_image = model.predict([content_image, style_image])
+
+    # Download the generated image
+    await tf.keras.preprocessing.image.save_img('new_image.jpg', new_image)
+    await tf.keras.utils.get_file('new_image.jpg', 'new_image.jpg')
+
+await main()
+
+
